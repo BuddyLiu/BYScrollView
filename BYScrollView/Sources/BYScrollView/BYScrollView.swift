@@ -4,8 +4,12 @@
 //
 //  Created by bo.liu on 2026/10/16.
 //
+//  通用滚动组件：基础 ScrollView 封装 + 跨版本几何监听。
+//  下拉刷新 / 上拉加载见 Refresh/ 目录，通过 `.byRefresh(...)` 链式接入。
+//
 
 import SwiftUI
+import Combine
 
 /// 一个可感知内容尺寸与滚动偏移的 ScrollView 封装。
 ///
@@ -30,6 +34,20 @@ public struct BYScrollView<BYContent>: View where BYContent: View {
     // MARK: - 内容与回调存储
 
     private var contentView: BYContent
+
+    /// 刷新悬停：`.refreshing` 时把内容整体下推的距离（= refreshThreshold），
+    /// 让刷头在释放后"挂住"，呈现 MJRefresh 式悬停。其余状态为 0，不影响布局。
+    private var topInset: CGFloat = 0
+    /// 挂在滚动内容**尾部**的附加内容（如加载更多页脚），跟随内容流滚动。
+    /// 为 nil 时对布局零影响。
+    private var bottomContentView: AnyView? = nil
+
+    /// 刷新悬停的宿主 `UIScrollView` 回调（内部使用）。
+    ///
+    /// `byRefresh` 容器注入探针：找到 SwiftUI ScrollView 底层的 UIScrollView，
+    /// 供刷新悬停用 `contentInset.top` 精确顶起（MJRefresh 同款机制）。
+    /// 普通使用（未接 `byRefresh`）时为 nil，探针不挂载、零开销。
+    private var scrollViewProbe: ((UIScrollView) -> Void)? = nil
 
     /// 单实例：内容尺寸变化
     private var contentSizeChange: ((CGSize) -> Void)? = nil
@@ -73,10 +91,9 @@ public struct BYScrollView<BYContent>: View where BYContent: View {
     /// - iOS 18+：来自 `ios18Geometry.containerSize` 经 ContainerSizeKey preference 中转
     @State private var fallbackState = BYScrollViewFallbackState()
 
-    /// iOS 18 分支：`onScrollGeometryChange` 的产物。
-    /// 用它驱动 Preference 更新，使 iOS 18 与 iOS 15 分支在字典回调、
-    /// 父视图聚合上的行为保持一致。
-    @State private var ios18Geometry: BYScrollGeometry? = nil
+    /// iOS 18 几何快照由引用类型持有；逐帧变化只刷新轻量 emitter，
+    /// 不让 BYScrollView 主体及用户内容随每一帧重新计算。
+    @State private var ios18GeometryStore = BYScrollViewGeometryStore()
 
     @available(iOS 18.0, *)
     fileprivate var fullGeometryChange: ((ScrollGeometry) -> Void)? {
@@ -96,6 +113,46 @@ public struct BYScrollView<BYContent>: View where BYContent: View {
         self.contentView = contentView()
     }
 
+    // MARK: - 内容装饰（刷新悬停 + 尾部页脚）
+
+    /// 内容装饰：把 `contentView` 包一层 `VStack`——
+    /// - 顶部加 `topInset` 让内容在刷新悬停时整体下推；
+    /// - 尾部可挂加载更多页脚（`bottomContentView`），随内容流滚动到底。
+    ///
+    /// 两分支（iOS 18+ / iOS 15–17）共用，保证几何测量与布局语义一致：
+    /// 页脚进入 `contentSize`，由真实的滚动位置驱动加载更多。
+    @ViewBuilder
+    private var decoratedContent: some View {
+        VStack(spacing: 0) {
+            contentView
+                .padding(.top, topInset)
+            if let bottom = bottomContentView {
+                bottom
+            }
+        }
+    }
+
+    /// 内部：设置刷新悬停顶插距。
+    func withTopInset(_ inset: CGFloat) -> Self {
+        var copy = self
+        copy.topInset = inset
+        return copy
+    }
+
+    /// 内部：设置滚动内容尾部的附加内容（加载更多页脚）。
+    func withBottomContent(_ content: AnyView?) -> Self {
+        var copy = self
+        copy.bottomContentView = content
+        return copy
+    }
+
+    /// 内部：挂载宿主 `UIScrollView` 探针（刷新容器注入）。
+    func withScrollViewProbe(_ probe: ((UIScrollView) -> Void)?) -> Self {
+        var copy = self
+        copy.scrollViewProbe = probe
+        return copy
+    }
+
     // MARK: - Body
 
     @ViewBuilder
@@ -112,25 +169,13 @@ public struct BYScrollView<BYContent>: View where BYContent: View {
     @available(iOS 18.0, *)
     private var bodyModern: some View {
         ScrollView(axes, showsIndicators: showsIndicators) {
-            contentView
+            decoratedContent
+                .background(scrollViewProbe.map { BYScrollViewHostFinder(onFound: $0) })
                 .background(
-                    Color.clear
-                        .preference(
-                            key: BYScrollViewContentSizePreferenceKey.self,
-                            value: ios18Geometry.map { [resolvedID: $0.contentSize] } ?? [:]
-                        )
-                        .preference(
-                            key: BYScrollViewContentOffsetPreferenceKey.self,
-                            value: ios18Geometry.map { [resolvedID: $0.contentOffset] } ?? [:]
-                        )
-                    // containerSize 同样通过 preference 中转。size 与 offset 不变、
-                    // 仅 containerSize 变化（旋转 / 分屏 / 窗口尺寸）时，仍能触发
-                    // byGeometryChange。与 iOS 15 分支共用 ContainerSizeKey，
-                    // 两分支的分发路径一致。
-                        .preference(
-                            key: BYScrollViewContainerSizePreferenceKey.self,
-                            value: ios18Geometry?.containerSize ?? .zero
-                        )
+                    BYScrollViewGeometryPreferenceEmitter(
+                        id: resolvedID,
+                        store: ios18GeometryStore
+                    )
                 )
             // 嵌套隔离：只保留本实例 ID，丢弃子树内其它 BYScrollView 贡献的数据。
             // 传 false 时不做过滤，外层字典回调即可收到内层数据（嵌套聚合）。
@@ -156,7 +201,7 @@ public struct BYScrollView<BYContent>: View where BYContent: View {
                 )
             },
             action: { _, newValue in
-                ios18Geometry = newValue
+                ios18GeometryStore.geometry = newValue
             }
         )
         // 完整几何：iOS 18 独有能力，直接透传给 `byFullGeometryChange`。
@@ -189,46 +234,49 @@ public struct BYScrollView<BYContent>: View where BYContent: View {
     /// 探针位置：
     /// - 偏移探针放在 **ScrollView 内容内部**（`contentView.background`），
     ///   只有内容坐标才会随滚动变化；放在 ScrollView 外层测不到偏移。
-    /// - 容器尺寸探针放在 **ScrollView 外层**（`.background` 于 ScrollView 之后），
-    ///   测的是滚动容器的 frame。
+    /// - 容器尺寸：iOS 15–17 上 `.background(GeometryReader)` 挂到
+    ///   ScrollView 外层会测量失败（实测恒为 0），因此改用**外层 GeometryReader
+    ///   包裹 ScrollView**，从包裹层的尺寸取容器大小，与 iOS 18 的
+    ///   `ScrollGeometry.containerSize` 语义对齐。
     private var bodyLegacy: some View {
-        ScrollView(axes, showsIndicators: showsIndicators) {
-            contentView
-                .background(
-                    GeometryReader { proxy in
-                        let frame = proxy.frame(in: .named(coordinateSpaceName))
-                        Color.clear
-                            .preference(
-                                key: BYScrollViewContentSizePreferenceKey.self,
-                                value: [resolvedID: proxy.size]
-                            )
-                            .preference(
-                                key: BYScrollViewContentOffsetPreferenceKey.self,
-                                // 取反：内容向上移动时 minY 变负，取反后与 UIKit contentOffset 语义一致。
-                                value: [resolvedID: CGPoint(x: -frame.minX, y: -frame.minY)]
-                            )
+        GeometryReader { container in
+            ScrollView(axes, showsIndicators: showsIndicators) {
+                decoratedContent
+                    .background(scrollViewProbe.map { BYScrollViewHostFinder(onFound: $0) })
+                    .background(
+                        GeometryReader { proxy in
+                            let frame = proxy.frame(in: .named(coordinateSpaceName))
+                            Color.clear
+                                .preference(
+                                    key: BYScrollViewContentSizePreferenceKey.self,
+                                    value: [resolvedID: proxy.size]
+                                )
+                                .preference(
+                                    key: BYScrollViewContentOffsetPreferenceKey.self,
+                                    // 取反：内容向上移动时 minY 变负，取反后与 UIKit contentOffset 语义一致。
+                                    value: [resolvedID: CGPoint(x: -frame.minX, y: -frame.minY)]
+                                )
+                        }
+                    )
+                // 与 iOS 18 分支相同的嵌套隔离逻辑。
+                    .transformPreference(BYScrollViewContentSizePreferenceKey.self) { value in
+                        if isolatesNestedChanges {
+                            value = value.filter { $0.key == resolvedID }
+                        }
                     }
-                )
-            // 与 iOS 18 分支相同的嵌套隔离逻辑。
-                .transformPreference(BYScrollViewContentSizePreferenceKey.self) { value in
-                    if isolatesNestedChanges {
-                        value = value.filter { $0.key == resolvedID }
+                    .transformPreference(BYScrollViewContentOffsetPreferenceKey.self) { value in
+                        if isolatesNestedChanges {
+                            value = value.filter { $0.key == resolvedID }
+                        }
                     }
-                }
-                .transformPreference(BYScrollViewContentOffsetPreferenceKey.self) { value in
-                    if isolatesNestedChanges {
-                        value = value.filter { $0.key == resolvedID }
-                    }
-                }
-        }
-        .coordinateSpace(name: coordinateSpaceName)
-        // 容器尺寸探针：挂在 ScrollView 外层，测 ScrollView 自身 frame，
-        // 与 iOS 18 的 `ScrollGeometry.containerSize` 语义对齐。
-        .background(
-            GeometryReader { proxy in
-                Color.clear.preference(key: BYScrollViewContainerSizePreferenceKey.self, value: proxy.size)
             }
-        )
+            .coordinateSpace(name: coordinateSpaceName)
+            // 容器尺寸：外层 GeometryReader 的实测尺寸，直接以 preference 上报。
+            .preference(
+                key: BYScrollViewContainerSizePreferenceKey.self,
+                value: container.size
+            )
+        }
         .onPreferenceChange(BYScrollViewContainerSizePreferenceKey.self) { size in
             fallbackState.containerSize = size
             publishGeometryIfReady()
@@ -274,7 +322,7 @@ public struct BYScrollView<BYContent>: View where BYContent: View {
     /// 用 `lastReportedStore.geometry` 去重，同一快照只回调一次。
     private func publishGeometryIfReady() {
         let geo: BYScrollGeometry
-        if #available(iOS 18.0, *), let g = ios18Geometry {
+        if #available(iOS 18.0, *), let g = ios18GeometryStore.geometry {
             geo = g
         } else {
             guard let size = lastReportedStore.size,
@@ -352,110 +400,5 @@ extension BYScrollView where BYContent: View {
         var copy = self
         copy.fullGeometryChange = param
         return copy
-    }
-}
-
-// MARK: - PreferenceKey
-
-/// 承载各实例内容尺寸的字典，向上传播时按 UUID 合并。
-/// 标为 internal（非 private）是因为父视图的 `byScrollViewGeometryAggregate` 需要引用它。
-struct BYScrollViewContentSizePreferenceKey: PreferenceKey {
-    static var defaultValue: [UUID: CGSize] = [:]
-
-    static func reduce(value: inout [UUID: CGSize], nextValue: () -> [UUID: CGSize]) {
-        value.merge(nextValue()) { $1 }
-    }
-}
-
-/// 承载各实例滚动偏移的字典，语义同上。
-struct BYScrollViewContentOffsetPreferenceKey: PreferenceKey {
-    static var defaultValue: [UUID: CGPoint] = [:]
-
-    static func reduce(value: inout [UUID: CGPoint], nextValue: () -> [UUID: CGPoint]) {
-        value.merge(nextValue()) { $1 }
-    }
-}
-
-/// 承载容器尺寸。两分支共用：
-/// - iOS 15–17：来自 ScrollView 外层 GeometryReader
-/// - iOS 18+：来自 `ios18Geometry.containerSize`
-private struct BYScrollViewContainerSizePreferenceKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        value = nextValue()
-    }
-}
-
-// MARK: - 内部状态存储
-
-/// 引用类型：`@State` 只在 wrappedValue 被整体重写时触发视图失效，
-/// 修改 class 内部字段不会。此处存储的去重值不驱动 UI，用 class
-/// 避免滚动期间每次偏移变化都重建 body。
-@MainActor
-private final class BYScrollViewLastReportedStore {
-    var size: CGSize?
-    var offset: CGPoint?
-    /// 上一次已回调的完整几何快照，用于 `publishGeometryIfReady` 去重。
-    var geometry: BYScrollGeometry?
-}
-
-/// 容器尺寸缓存。引用类型，避免 `onPreferenceChange` 内写入触发重建。
-@MainActor
-private final class BYScrollViewFallbackState {
-    var containerSize: CGSize?
-}
-
-// MARK: - 跨版本统一数据模型
-
-/// 跨 iOS 15+ 语义一致的滚动几何快照。
-/// `contentOffset` / `contentSize` / `containerSize` 在所有支持版本上精度一致。
-///
-/// 不包含 `contentInsets` / `visibleRect` / `bounds`：这些字段在 iOS 15–17
-/// 无法精确获取，放进统一接口会让调用者误以为跨版本可信。
-/// 需要时请用 `byFullGeometryChange`（仅 iOS 18+）。
-public struct BYScrollGeometry: Equatable {
-    public var contentOffset: CGPoint
-    public var contentSize: CGSize
-    public var containerSize: CGSize
-
-    public init(contentOffset: CGPoint, contentSize: CGSize, containerSize: CGSize) {
-        self.contentOffset = contentOffset
-        self.contentSize = contentSize
-        self.containerSize = containerSize
-    }
-}
-
-// MARK: - 父视图平级聚合
-
-/// 挂在父视图上，聚合子树内所有平级 `BYScrollView` 向上传播的尺寸/偏移字典。
-struct BYScrollViewGeometryAggregator: ViewModifier {
-    let onSizeChange: ([UUID: CGSize]) -> Void
-    let onOffsetChange: ([UUID: CGPoint]) -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .onPreferenceChange(BYScrollViewContentSizePreferenceKey.self, perform: onSizeChange)
-            .onPreferenceChange(BYScrollViewContentOffsetPreferenceKey.self, perform: onOffsetChange)
-    }
-}
-
-extension View {
-    /// 挂在父视图上，聚合所有平级子 `BYScrollView` 的尺寸/偏移。
-    ///
-    /// 每个子实例向上传播 `[自己的ID: 值]`，父视图 reduce 后拿到全部平级实例：
-    /// `[id1: ..., id2: ...]`。
-    ///
-    /// 与 `byNestedIsolation` 的关系：平级聚合不受隔离影响——每个实例向上
-    /// 传播的始终是 `[自己ID: 值]`，父视图自然合并。隔离只影响"外层能否看到
-    /// 内层数据"，不影响平级之间。
-    public func byScrollViewGeometryAggregate(
-        onSizeChange: @escaping ([UUID: CGSize]) -> Void = { _ in },
-        onOffsetChange: @escaping ([UUID: CGPoint]) -> Void = { _ in }
-    ) -> some View {
-        modifier(BYScrollViewGeometryAggregator(
-            onSizeChange: onSizeChange,
-            onOffsetChange: onOffsetChange
-        ))
     }
 }
