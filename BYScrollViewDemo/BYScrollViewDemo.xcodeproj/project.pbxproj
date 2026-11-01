@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		916932023097329000053774 /* BYScrollView in Frameworks */ = {isa = PBXBuildFile; productRef = 916932013097329000053774 /* BYScrollView */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		916931A230972D9400053774 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				916932023097329000053774 /* BYScrollView in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +117,7 @@
 			);
 			name = BYScrollViewDemo;
 			packageProductDependencies = (
+				916932013097329000053774 /* BYScrollView */,
 			);
 			productName = BYScrollViewDemo;
 			productReference = 9169319430972D9200053774 /* BYScrollViewDemo.app */;
@@ -195,6 +201,9 @@
 			);
 			mainGroup = 9169318B30972D9200053774;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				916932003097329000053774 /* XCLocalSwiftPackageReference "../BYScrollView" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9169319530972D9200053774 /* Products */;
 			projectDirPath = "";
@@ -580,6 +589,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		916932003097329000053774 /* XCLocalSwiftPackageReference "../BYScrollView" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../BYScrollView;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		916932013097329000053774 /* BYScrollView */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BYScrollView;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 9169318C30972D9200053774 /* Project object */;
 }

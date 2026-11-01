@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import BYScrollView
 
 struct NestedIsolationDemo: View {
     @State private var isolatesNestedChanges = true

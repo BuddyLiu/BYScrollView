@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import BYScrollView
 
 struct ShortListFooterDemo: View {
     @State private var showsFooterWhenContentFits = true

@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import BYScrollView
 
 struct CustomHeaderFooterDemo: View {
     @StateObject private var model = DemoFeedModel()

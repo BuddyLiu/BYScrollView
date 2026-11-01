@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import BYScrollView
 
 struct FullGeometryDemo: View {
     @State private var geo: FullGeoSnapshot?

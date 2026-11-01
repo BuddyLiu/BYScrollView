@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import BYScrollView
 
 struct BasicScrollDemo: View {
     @State private var showsIndicators = true

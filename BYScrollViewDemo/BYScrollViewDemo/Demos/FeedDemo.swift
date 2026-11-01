@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import BYScrollView
 
 struct FeedDemo: View {
     @StateObject private var model = DemoFeedModel()
