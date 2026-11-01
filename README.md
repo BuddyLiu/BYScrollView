@@ -159,6 +159,20 @@ BYScrollView(axes: .vertical) {
 
 **注意**：`.byRefresh` 会接管当前实例的 `byGeometryChange`。需要同时监听几何时，用返回容器的 `.onScrollGeometry { }` 追加。
 
+### 进入即刷新
+
+开启 `autoRefreshOnAppear` 后，进入页面无需手动下拉，自动进入 `.refreshing` 并执行 `onRefresh`（对应 MJRefresh 的 `beginRefreshing()`）：
+
+```swift
+.byRefresh(
+    autoRefreshOnAppear: true,   // 默认 false：手动下拉触发
+    hasMore: vm.hasMore,
+    onRefresh: { await vm.reload() }
+)
+```
+
+视图每次 `onAppear` 都会触发；刷新进行中再次出现不会重复触发。
+
 ### 自定义刷头 / 页脚
 
 ```swift
@@ -251,7 +265,7 @@ struct BYScrollGeometry: Equatable {
 | `byFullGeometryChange(_:)` | iOS 18+ 完整 ScrollGeometry |
 | `byNestedIsolation(_:)` | 开关嵌套隔离 |
 | `byScrollViewGeometryAggregate(onSizeChange:onOffsetChange:)` | 父视图平级聚合 |
-| `byRefresh(refreshThreshold:loadMoreThreshold:showsFooterWhenContentFits:hasMore:onRefresh:onLoadMore:)` | 叠加刷新/加载 |
+| `byRefresh(refreshThreshold:loadMoreThreshold:showsFooterWhenContentFits:autoRefreshOnAppear:hasMore:onRefresh:onLoadMore:)` | 叠加刷新/加载 |
 | `byRefreshHeader(_:)` / `byLoadMoreFooter(_:)` | 自定义刷头 / 页脚 |
 | `onScrollGeometry(_:)` | 容器上追加几何监听 |
 
@@ -414,6 +428,7 @@ func byRefresh(
     refreshThreshold: CGFloat,          // 下拉触发刷新的距离，默认 80
     loadMoreThreshold: CGFloat,         // 到底后继续上拉的触发距离，默认 24
     showsFooterWhenContentFits: Bool,   // 内容不足一屏时是否显示 Footer，默认 false
+    autoRefreshOnAppear: Bool,          // 进入页面即自动刷新，默认 false
     hasMore: Bool,                      // 是否还有更多（false 显示"没有更多"）
     onRefresh: (() async -> Void)?,     // 下拉刷新回调
     onLoadMore: (() async -> Void)?     // 上拉加载回调；传 nil 时 Footer 整块不渲染
@@ -426,6 +441,7 @@ func byRefresh(
 - `onRefresh` / `onLoadMore` 均支持 async，内部会自动在刷新/加载期间 `await` 完成后复位状态。
 - `hasMore = false` 显示"没有更多"，重新置 `true` 自动恢复加载能力（对应 MJRefresh `resetNoMoreData()`）。
 - **不传 `onLoadMore`（`nil`）时 Footer 整块不渲染**，只做下拉刷新也不会出现"上拉加载更多"页脚。
+- `autoRefreshOnAppear = true` 时，视图每次 `onAppear` 自动进入 `.refreshing` 并执行 `onRefresh`，无需手动下拉（对应 MJRefresh `beginRefreshing()`）；默认 `false` 由用户手动触发。
 
 ### 自定义刷头 / 页脚
 
@@ -628,4 +644,4 @@ iOS 18 分支的 `ios18Geometry` 是 `@State`，每次几何变化会触发一�
 
 `BYRefreshScrollViewTests` 内含 17 个状态机单元测试（`@MainActor`），覆盖：阈值判定、松手触发、反向取消、手势取消、悬停补偿、刷新复位、Footer 短列表 / 高度 / 未拖动不 armed / noMore 切换。当前工程 17/17 通过。
 
-另有 `BYScrollViewDemo` 示例工程，含 9 个功能演示页（基础滚动 / 几何监听 / 多实例聚合 / 嵌套隔离 / 列表刷新 / 自定义刷头页脚 / 短列表 Footer / 没有更多 / iOS 18 完整几何），以本地 Package 方式导入本库。
+另有 `BYScrollViewDemo` 示例工程，含 10 个功能演示页（基础滚动 / 几何监听 / 多实例聚合 / 嵌套隔离 / 列表刷新 / 自定义刷头页脚 / 短列表 Footer / 没有更多 / 进入即刷新 / iOS 18 完整几何），以本地 Package 方式导入本库。

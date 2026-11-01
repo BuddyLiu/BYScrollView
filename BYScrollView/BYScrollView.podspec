@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'BYScrollView'
-  s.version          = '1.0.0'
+  s.version          = '1.1.0'
   s.summary          = 'A SwiftUI ScrollView wrapper that observes content size and scroll offset, consistent across iOS 15+.'
   s.description      = <<-DESC
                        BYScrollView is a SwiftUI ScrollView wrapper providing consistent scroll geometry observation

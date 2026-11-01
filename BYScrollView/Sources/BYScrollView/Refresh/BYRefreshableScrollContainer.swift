@@ -102,6 +102,11 @@ public struct BYRefreshableScrollContainer<BYContent: View>: View {
         }
         .onAppear {
             driver.handleHasMoreChange(config.hasMore)
+
+            // 配置开启时进入页面即自动刷新，无需手动下拉。
+            if config.autoRefreshOnAppear {
+                driver.triggerRefresh()
+            }
         }
         .onChange(of: config.hasMore) { newValue in
             driver.handleHasMoreChange(newValue)
@@ -176,10 +181,14 @@ extension BYScrollView {
     ///   高度由加载状态驱动（idle=0 / loading=50 / noMore=24）。
     /// - `hasMore` 变化会自动同步到 driver：`false` 时页脚展示"没有更多"，
     ///   重新置 `true` 即恢复加载能力（对应 MJRefresh 的 `resetNoMoreData()`）。
+    /// - `autoRefreshOnAppear` 置 `true` 时，进入页面即自动进入 `.refreshing`
+    ///   并执行 `onRefresh`（对应 MJRefresh 的 `beginRefreshing()`）；
+    ///   默认 `false`，由用户手动下拉触发。
     public func byRefresh(
         refreshThreshold: CGFloat = 80,
         loadMoreThreshold: CGFloat = 24,
         showsFooterWhenContentFits: Bool = false,
+        autoRefreshOnAppear: Bool = false,
         hasMore: Bool = true,
         onRefresh: (() async -> Void)? = nil,
         onLoadMore: (() async -> Void)? = nil
@@ -190,6 +199,7 @@ extension BYScrollView {
                 refreshThreshold: refreshThreshold,
                 loadMoreThreshold: loadMoreThreshold,
                 showsFooterWhenContentFits: showsFooterWhenContentFits,
+                autoRefreshOnAppear: autoRefreshOnAppear,
                 hasMore: hasMore,
                 onRefresh: onRefresh,
                 onLoadMore: onLoadMore

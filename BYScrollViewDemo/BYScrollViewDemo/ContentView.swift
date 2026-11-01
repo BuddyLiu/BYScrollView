@@ -69,6 +69,12 @@ struct ContentView: View {
             destination: AnyView(NoMoreDemo())
         ),
         DemoEntry(
+            title: "进入即刷新",
+            subtitle: "autoRefreshOnAppear 自动刷新",
+            icon: "arrow.down.circle",
+            destination: AnyView(AutoRefreshDemo())
+        ),
+        DemoEntry(
             title: "完整几何（iOS 18+）",
             subtitle: "byFullGeometryChange 原生 ScrollGeometry",
             icon: "iphone",
